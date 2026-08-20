@@ -1,26 +1,31 @@
 import { Router } from 'express';
 import { HttpError, requireAuth, requireRole } from '../auth.js';
-import { db } from '../db.js';
-import { asyncHandler, makeId } from '../utils.js';
-
-interface StoreRow { id: string; name: string }
-
-/** Denormalize each store with the list of userIds assigned to it as store_manager. */
-function shape() {
-  const stores = db.prepare(`SELECT id, name FROM stores`).all() as StoreRow[];
-  const mgrs = db.prepare(
-    `SELECT id AS user_id, store_id FROM users WHERE role = 'store_manager' AND store_id IS NOT NULL`,
-  ).all() as { user_id: string; store_id: string }[];
-  return stores.map((s) => ({
-    id: s.id,
-    name: s.name,
-    managerIds: mgrs.filter((m) => m.store_id === s.id).map((m) => m.user_id),
-  }));
-}
+import { prisma } from '../db.js';
+import { asyncHandler, makeId, p } from '../utils.js';
 
 const router = Router();
 router.use(requireAuth);
-router.get('/', (_req, res) => res.json(shape()));
+
+router.get(
+  '/',
+  asyncHandler(async (_req, res) => {
+    const stores = await prisma.store.findMany({
+      include: {
+        managers: {
+          where: { role: 'store_manager' },
+          select: { id: true },
+        },
+      },
+    });
+    res.json(
+      stores.map((s) => ({
+        id: s.id,
+        name: s.name,
+        managerIds: s.managers.map((m) => m.id),
+      })),
+    );
+  }),
+);
 
 router.use(requireRole('admin'));
 
@@ -29,9 +34,8 @@ router.post(
   asyncHandler(async (req, res) => {
     const name = String(req.body?.name ?? '').trim();
     if (!name) throw new HttpError(400, 'নাম দিন।');
-    const id = makeId('store');
-    db.prepare(`INSERT INTO stores (id, name) VALUES (?, ?)`).run(id, name);
-    res.status(201).json({ id, name, managerIds: [] });
+    const created = await prisma.store.create({ data: { id: makeId('store'), name } });
+    res.status(201).json({ id: created.id, name: created.name, managerIds: [] });
   }),
 );
 
@@ -40,7 +44,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const name = String(req.body?.name ?? '').trim();
     if (!name) throw new HttpError(400, 'নাম দিন।');
-    db.prepare(`UPDATE stores SET name = ? WHERE id = ?`).run(name, req.params.id);
+    await prisma.store.update({ where: { id: p(req.params.id) }, data: { name } });
     res.json({ ok: true });
   }),
 );
@@ -48,7 +52,9 @@ router.patch(
 router.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    db.prepare(`DELETE FROM stores WHERE id = ?`).run(req.params.id);
+    await prisma.store.delete({ where: { id: p(req.params.id) } }).catch(() => {
+      // ignore not-found — deleting non-existent store is idempotent
+    });
     res.status(204).end();
   }),
 );

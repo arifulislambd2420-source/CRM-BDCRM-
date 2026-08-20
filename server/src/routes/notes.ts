@@ -1,40 +1,32 @@
 import { Router } from 'express';
 import { HttpError, currentUser, requireAuth } from '../auth.js';
-import { db } from '../db.js';
+import { prisma } from '../db.js';
 import type { AuthUser } from '../types.js';
-import { asyncHandler, makeId } from '../utils.js';
+import { asyncHandler, makeId, p } from '../utils.js';
 
-interface CustomerLite {
-  id: string;
-  store_id: string;
-}
 interface NoteRow {
   id: string;
-  customer_id: string;
+  createdById: string;
+  createdByName: string;
   number: number;
   text: string;
-  created_at: string;
-  created_by_id: string;
-  created_by_name: string;
+  createdAt: Date;
 }
 
-/**
- * Server-side twin of frontend `canModifyNote`. This is now the source of
- * truth — the frontend gates the UI, but rejection here is what actually
- * prevents unauthorized edits.
- */
+/** Server-side twin of frontend canModifyNote — the source of truth. */
 function canModifyNote(user: AuthUser, note: NoteRow): boolean {
   if (user.role === 'admin') return true;
-  if (note.created_by_id !== user.id) return false;
+  if (note.createdById !== user.id) return false;
   return user.canEditOwnNotes === true;
 }
 
-function assertVisibleCustomer(user: AuthUser, id: string): CustomerLite {
-  const row = db.prepare(`SELECT id, store_id FROM customers WHERE id = ?`).get(id) as
-    | CustomerLite
-    | undefined;
+async function assertVisibleCustomer(user: AuthUser, customerId: string) {
+  const row = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: { id: true, storeId: true },
+  });
   if (!row) throw new HttpError(404, 'কাস্টমার পাওয়া যায়নি।');
-  if (user.role === 'store_manager' && row.store_id !== user.storeId) {
+  if (user.role === 'store_manager' && row.storeId !== user.storeId) {
     throw new HttpError(403, 'অনুমতি নেই।');
   }
   return row;
@@ -48,26 +40,34 @@ router.post(
   asyncHandler(async (req, res) => {
     const u = currentUser(req);
     const customerId = String(req.params.customerId ?? '');
-    assertVisibleCustomer(u, customerId);
+    await assertVisibleCustomer(u, customerId);
     const text = String(req.body?.text ?? '').trim();
     if (!text) throw new HttpError(400, 'নোট খালি রাখা যাবে না।');
 
     // Sequential per-customer, max+1 so numbers never recycle.
-    const maxRow = db
-      .prepare(`SELECT COALESCE(MAX(number), 0) AS m FROM notes WHERE customer_id = ?`)
-      .get(customerId) as { m: number };
-    const number = maxRow.m + 1;
-
-    const id = makeId('note');
-    const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO notes (id, customer_id, number, text, created_at, created_by_id, created_by_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, customerId, number, text, now, u.id, u.name);
-
+    const agg = await prisma.note.aggregate({
+      _max: { number: true },
+      where: { customerId },
+    });
+    const number = (agg._max.number ?? 0) + 1;
+    const created = await prisma.note.create({
+      data: {
+        id: makeId('note'),
+        customerId,
+        number,
+        text,
+        createdAt: new Date(),
+        createdById: u.id,
+        createdByName: u.name,
+      },
+    });
     res.status(201).json({
-      id, number, text,
-      createdAt: now, createdById: u.id, createdByName: u.name,
+      id: created.id,
+      number: created.number,
+      text: created.text,
+      createdAt: created.createdAt.toISOString(),
+      createdById: created.createdById,
+      createdByName: created.createdByName,
     });
   }),
 );
@@ -77,16 +77,23 @@ router.patch(
   asyncHandler(async (req, res) => {
     const u = currentUser(req);
     const customerId = String(req.params.customerId ?? '');
-    assertVisibleCustomer(u, customerId);
-    const note = db
-      .prepare(`SELECT * FROM notes WHERE id = ? AND customer_id = ?`)
-      .get(req.params.noteId, customerId) as NoteRow | undefined;
+    await assertVisibleCustomer(u, customerId);
+    const note = await prisma.note.findFirst({
+      where: { id: p(req.params.noteId), customerId },
+    });
     if (!note) throw new HttpError(404, 'নোট পাওয়া যায়নি।');
     if (!canModifyNote(u, note)) throw new HttpError(403, 'এই নোট সম্পাদনার অনুমতি নেই।');
     const text = String(req.body?.text ?? '').trim();
     if (!text) throw new HttpError(400, 'নোট খালি রাখা যাবে না।');
-    db.prepare(`UPDATE notes SET text = ? WHERE id = ?`).run(text, note.id);
-    res.json({ ...note, text, createdAt: note.created_at, createdById: note.created_by_id, createdByName: note.created_by_name });
+    const updated = await prisma.note.update({ where: { id: note.id }, data: { text } });
+    res.json({
+      id: updated.id,
+      number: updated.number,
+      text: updated.text,
+      createdAt: updated.createdAt.toISOString(),
+      createdById: updated.createdById,
+      createdByName: updated.createdByName,
+    });
   }),
 );
 
@@ -95,16 +102,16 @@ router.delete(
   asyncHandler(async (req, res) => {
     const u = currentUser(req);
     const customerId = String(req.params.customerId ?? '');
-    assertVisibleCustomer(u, customerId);
-    const note = db
-      .prepare(`SELECT * FROM notes WHERE id = ? AND customer_id = ?`)
-      .get(req.params.noteId, customerId) as NoteRow | undefined;
+    await assertVisibleCustomer(u, customerId);
+    const note = await prisma.note.findFirst({
+      where: { id: p(req.params.noteId), customerId },
+    });
     if (!note) {
       res.status(204).end();
       return;
     }
     if (!canModifyNote(u, note)) throw new HttpError(403, 'এই নোট মোছার অনুমতি নেই।');
-    db.prepare(`DELETE FROM notes WHERE id = ?`).run(note.id);
+    await prisma.note.delete({ where: { id: note.id } });
     res.status(204).end();
   }),
 );

@@ -1,74 +1,56 @@
 import { Router } from 'express';
 import { HttpError, currentUser, requireAuth } from '../auth.js';
-import { db } from '../db.js';
+import { prisma } from '../db.js';
 import type { Customer, Note } from '../types.js';
-import { asyncHandler, makeId } from '../utils.js';
+import { asyncHandler, makeId, p } from '../utils.js';
 
-const router = Router();
-router.use(requireAuth);
+type PrismaCustomer = Awaited<ReturnType<typeof prisma.customer.findFirst>>;
+type NoteRow = { id: string; number: number; text: string; createdAt: Date; createdById: string; createdByName: string };
 
-interface CustomerRow {
-  id: string;
-  name: string;
-  phone: string;
-  address: string;
-  source: string;
-  pipeline_id: string;
-  current_stage_id: string;
-  store_id: string;
-  created_at: string;
-  created_by_id: string;
-}
-interface NoteRow {
-  id: string;
-  customer_id: string;
-  number: number;
-  text: string;
-  created_at: string;
-  created_by_id: string;
-  created_by_name: string;
-}
-
-function loadNotes(customerId: string): Note[] {
-  return (db
-    .prepare(`SELECT * FROM notes WHERE customer_id = ? ORDER BY number ASC`)
-    .all(customerId) as NoteRow[]).map((n) => ({
-    id: n.id,
-    number: n.number,
-    text: n.text,
-    createdAt: n.created_at,
-    createdById: n.created_by_id,
-    createdByName: n.created_by_name,
-  }));
-}
-
-function toCustomer(row: CustomerRow): Customer {
+function toApiCustomer(
+  row: NonNullable<PrismaCustomer>,
+  notes: NoteRow[],
+): Customer {
   return {
     id: row.id,
     name: row.name,
     phone: row.phone,
     address: row.address,
     source: row.source,
-    pipelineId: row.pipeline_id,
-    currentStageId: row.current_stage_id,
-    storeId: row.store_id,
-    createdAt: row.created_at,
-    createdById: row.created_by_id,
-    notes: loadNotes(row.id),
+    pipelineId: row.pipelineId,
+    currentStageId: row.currentStageId,
+    storeId: row.storeId,
+    createdAt: row.createdAt.toISOString(),
+    createdById: row.createdById,
+    notes: notes.map(toApiNote),
+  };
+}
+function toApiNote(n: NoteRow): Note {
+  return {
+    id: n.id,
+    number: n.number,
+    text: n.text,
+    createdAt: n.createdAt.toISOString(),
+    createdById: n.createdById,
+    createdByName: n.createdByName,
   };
 }
 
-/** GET /api/customers — role-scoped list. Store managers see only their own store. */
+const router = Router();
+router.use(requireAuth);
+
+/** GET /api/customers — role-scoped list; store managers see only their own store. */
 router.get(
   '/',
   asyncHandler(async (req, res) => {
     const u = currentUser(req);
-    const rows =
-      u.role === 'store_manager'
-        ? (db.prepare(`SELECT * FROM customers WHERE store_id = ? ORDER BY created_at DESC`)
-            .all(u.storeId) as CustomerRow[])
-        : (db.prepare(`SELECT * FROM customers ORDER BY created_at DESC`).all() as CustomerRow[]);
-    res.json(rows.map(toCustomer));
+    const where = u.role === 'store_manager' ? { storeId: u.storeId } : {};
+    const rows = await prisma.customer.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { notes: { orderBy: { number: 'asc' } } },
+    });
+    res.json(rows.map((r) => toApiCustomer(r, r.notes)));
   }),
 );
 
@@ -76,14 +58,15 @@ router.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const u = currentUser(req);
-    const row = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(req.params.id) as
-      | CustomerRow
-      | undefined;
+    const row = await prisma.customer.findUnique({
+      where: { id: p(req.params.id) },
+      include: { notes: { orderBy: { number: 'asc' } } },
+    });
     if (!row) throw new HttpError(404, 'কাস্টমার পাওয়া যায়নি।');
-    if (u.role === 'store_manager' && row.store_id !== u.storeId) {
+    if (u.role === 'store_manager' && row.storeId !== u.storeId) {
       throw new HttpError(403, 'অনুমতি নেই।');
     }
-    res.json(toCustomer(row));
+    res.json(toApiCustomer(row, row.notes));
   }),
 );
 
@@ -97,19 +80,21 @@ router.post(
     if (!b.name || !b.phone || !storeId || !b.pipelineId || !b.currentStageId) {
       throw new HttpError(400, 'সব আবশ্যক ফিল্ড পূরণ করুন।');
     }
-    const id = makeId('cust');
-    const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO customers
-        (id, name, phone, address, source, pipeline_id, current_stage_id, store_id, created_at, created_by_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      id, String(b.name), String(b.phone), String(b.address ?? ''),
-      String(b.source ?? ''), String(b.pipelineId), String(b.currentStageId),
-      storeId, now, u.id,
-    );
-    const row = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(id) as CustomerRow;
-    res.status(201).json(toCustomer(row));
+    const created = await prisma.customer.create({
+      data: {
+        id: makeId('cust'),
+        name: String(b.name),
+        phone: String(b.phone),
+        address: String(b.address ?? ''),
+        source: String(b.source ?? ''),
+        pipelineId: String(b.pipelineId),
+        currentStageId: String(b.currentStageId),
+        storeId,
+        createdAt: new Date(),
+        createdById: u.id,
+      },
+    });
+    res.status(201).json(toApiCustomer(created, []));
   }),
 );
 
@@ -117,33 +102,28 @@ router.patch(
   '/:id',
   asyncHandler(async (req, res) => {
     const u = currentUser(req);
-    const row = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(req.params.id) as
-      | CustomerRow
-      | undefined;
+    const row = await prisma.customer.findUnique({ where: { id: p(req.params.id) } });
     if (!row) throw new HttpError(404, 'কাস্টমার পাওয়া যায়নি।');
-    if (u.role === 'store_manager' && row.store_id !== u.storeId) {
+    if (u.role === 'store_manager' && row.storeId !== u.storeId) {
       throw new HttpError(403, 'আপনার এই কাস্টমার সম্পাদনার অনুমতি নেই।');
     }
     const b = req.body ?? {};
-    const fields: Array<[string, unknown]> = [];
-    if (b.name !== undefined) fields.push(['name', String(b.name)]);
-    if (b.phone !== undefined) fields.push(['phone', String(b.phone)]);
-    if (b.address !== undefined) fields.push(['address', String(b.address)]);
-    if (b.source !== undefined) fields.push(['source', String(b.source)]);
-    if (b.pipelineId !== undefined) fields.push(['pipeline_id', String(b.pipelineId)]);
-    if (b.currentStageId !== undefined) fields.push(['current_stage_id', String(b.currentStageId)]);
+    const data: Record<string, unknown> = {};
+    if (b.name !== undefined) data.name = String(b.name);
+    if (b.phone !== undefined) data.phone = String(b.phone);
+    if (b.address !== undefined) data.address = String(b.address);
+    if (b.source !== undefined) data.source = String(b.source);
+    if (b.pipelineId !== undefined) data.pipelineId = String(b.pipelineId);
+    if (b.currentStageId !== undefined) data.currentStageId = String(b.currentStageId);
     if (b.storeId !== undefined && u.role !== 'store_manager') {
-      fields.push(['store_id', String(b.storeId)]);
+      data.storeId = String(b.storeId);
     }
-    if (fields.length > 0) {
-      const setClause = fields.map(([k]) => `${k} = ?`).join(', ');
-      db.prepare(`UPDATE customers SET ${setClause} WHERE id = ?`).run(
-        ...fields.map(([, v]) => v),
-        req.params.id,
-      );
-    }
-    const updated = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(req.params.id) as CustomerRow;
-    res.json(toCustomer(updated));
+    const updated = await prisma.customer.update({
+      where: { id: p(req.params.id) },
+      data,
+      include: { notes: { orderBy: { number: 'asc' } } },
+    });
+    res.json(toApiCustomer(updated, updated.notes));
   }),
 );
 
@@ -151,17 +131,15 @@ router.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const u = currentUser(req);
-    const row = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(req.params.id) as
-      | CustomerRow
-      | undefined;
+    const row = await prisma.customer.findUnique({ where: { id: p(req.params.id) } });
     if (!row) {
       res.status(204).end();
       return;
     }
-    if (u.role === 'store_manager' && row.store_id !== u.storeId) {
+    if (u.role === 'store_manager' && row.storeId !== u.storeId) {
       throw new HttpError(403, 'অনুমতি নেই।');
     }
-    db.prepare(`DELETE FROM customers WHERE id = ?`).run(req.params.id);
+    await prisma.customer.delete({ where: { id: p(req.params.id) } });
     res.status(204).end();
   }),
 );

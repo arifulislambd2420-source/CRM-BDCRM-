@@ -1,0 +1,136 @@
+// Prisma schema for the CRM.
+// Switching from local MySQL to Hostinger's managed MySQL is DATABASE_URL only —
+// no changes here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  sub_admin
+  store_manager
+}
+
+model User {
+  id              String   @id
+  name            String
+  email           String   @unique
+  passwordHash    String   @map("password_hash")
+  role            Role
+  storeId         String?  @map("store_id")
+  canEditOwnNotes Boolean  @default(false) @map("can_edit_own_notes")
+
+  store          Store?           @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  createdCustomers Customer[]     @relation("CustomerCreator")
+  authoredNotes  Note[]           @relation("NoteAuthor")
+  refreshTokens  RefreshToken[]
+
+  @@index([storeId])
+  @@map("users")
+}
+
+model Store {
+  id       String     @id
+  name     String
+  managers User[]
+  customers Customer[]
+
+  @@map("stores")
+}
+
+model Pipeline {
+  id     String  @id
+  name   String
+  stages Stage[]
+  customers Customer[]
+
+  @@map("pipelines")
+}
+
+model Stage {
+  id         String   @id
+  pipelineId String   @map("pipeline_id")
+  name       String
+  sortIndex  Int      @map("sort_index")
+
+  pipeline   Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  customersOnStage Customer[] @relation("CurrentStage")
+
+  @@index([pipelineId, sortIndex])
+  @@map("stages")
+}
+
+model Customer {
+  id             String   @id
+  name           String
+  phone          String
+  address        String   @default("")
+  source         String   @default("")
+  pipelineId     String   @map("pipeline_id")
+  currentStageId String   @map("current_stage_id")
+  storeId        String   @map("store_id")
+  createdAt      DateTime @map("created_at")
+  createdById    String   @map("created_by_id")
+
+  pipeline     Pipeline @relation(fields: [pipelineId], references: [id])
+  currentStage Stage    @relation("CurrentStage", fields: [currentStageId], references: [id])
+  store        Store    @relation(fields: [storeId], references: [id])
+  createdBy    User     @relation("CustomerCreator", fields: [createdById], references: [id])
+  notes        Note[]
+
+  @@index([storeId])
+  @@index([pipelineId])
+  @@index([currentStageId])
+  @@map("customers")
+}
+
+model Note {
+  id             String   @id
+  customerId     String   @map("customer_id")
+  number         Int
+  text           String   @db.Text
+  createdAt      DateTime @map("created_at")
+  createdById    String   @map("created_by_id")
+  createdByName  String   @map("created_by_name")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  author   User     @relation("NoteAuthor", fields: [createdById], references: [id])
+
+  // Sequential per customer, never recycled. Enforced in code via max(number)+1.
+  @@unique([customerId, number], map: "notes_customer_number_unique")
+  @@index([customerId, number])
+  @@map("notes")
+}
+
+model Setting {
+  key   String @id
+  value String @db.Text
+
+  @@map("settings")
+}
+
+/**
+ * Refresh tokens are stored server-side so we can revoke individual sessions
+ * (logout on one device, admin-forced logout, etc.). The token *string* is
+ * hashed at rest; the raw value only leaves the server once when issued.
+ */
+model RefreshToken {
+  id        String   @id
+  userId    String   @map("user_id")
+  tokenHash String   @map("token_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}

@@ -1,12 +1,10 @@
 import { Router } from 'express';
 import { HttpError, requireAuth, requireRole } from '../auth.js';
-import { db } from '../db.js';
+import { prisma } from '../db.js';
 import { asyncHandler } from '../utils.js';
 
-function readSources(): string[] {
-  const row = db.prepare(`SELECT value FROM settings WHERE key = 'sources'`).get() as
-    | { value: string }
-    | undefined;
+async function readSources(): Promise<string[]> {
+  const row = await prisma.setting.findUnique({ where: { key: 'sources' } });
   if (!row) return [];
   try {
     const parsed = JSON.parse(row.value);
@@ -16,17 +14,24 @@ function readSources(): string[] {
   }
 }
 
-function writeSources(sources: string[]): void {
+async function writeSources(sources: string[]): Promise<void> {
   const value = JSON.stringify(sources);
-  db.prepare(
-    `INSERT INTO settings (key, value) VALUES ('sources', ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-  ).run(value);
+  await prisma.setting.upsert({
+    where: { key: 'sources' },
+    create: { key: 'sources', value },
+    update: { value },
+  });
 }
 
 const router = Router();
 router.use(requireAuth);
-router.get('/', (_req, res) => res.json({ sources: readSources() }));
+
+router.get(
+  '/',
+  asyncHandler(async (_req, res) => {
+    res.json({ sources: await readSources() });
+  }),
+);
 
 router.put(
   '/sources',
@@ -35,7 +40,7 @@ router.put(
     const list = req.body?.sources;
     if (!Array.isArray(list)) throw new HttpError(400, 'sources অ্যারে দিন।');
     const cleaned = list.map((s) => String(s).trim()).filter(Boolean);
-    writeSources(cleaned);
+    await writeSources(cleaned);
     res.json({ sources: cleaned });
   }),
 );

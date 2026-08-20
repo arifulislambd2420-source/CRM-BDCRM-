@@ -50,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    logoutService();
+    void logoutService();
     setUser(null);
   };
 
