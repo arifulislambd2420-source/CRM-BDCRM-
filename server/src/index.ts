@@ -7,10 +7,12 @@ import authRouter from './routes/auth.js';
 import customersRouter from './routes/customers.js';
 import notesRouter from './routes/notes.js';
 import pipelinesRouter from './routes/pipelines.js';
+import productsRouter from './routes/products.js';
 import settingsRouter from './routes/settings.js';
 import storesRouter from './routes/stores.js';
 import usersRouter from './routes/users.js';
 import { seed } from './seed.js';
+import { UPLOAD_ROOT } from './upload.js';
 
 async function boot() {
   if ((await isEmpty()) && (process.env.SEED_ON_EMPTY ?? 'true') !== 'false') {
@@ -29,6 +31,9 @@ async function boot() {
   );
   app.use(express.json({ limit: '256kb' }));
 
+  // Serve uploaded files (product images, etc.) from disk.
+  app.use('/uploads', express.static(UPLOAD_ROOT, { fallthrough: true, maxAge: '1d' }));
+
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, ts: new Date().toISOString() });
   });
@@ -37,6 +42,7 @@ async function boot() {
   app.use('/api/customers', customersRouter);
   app.use('/api/customers/:customerId/notes', notesRouter);
   app.use('/api/pipelines', pipelinesRouter);
+  app.use('/api/products', productsRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/stores', storesRouter);
   app.use('/api/settings', settingsRouter);

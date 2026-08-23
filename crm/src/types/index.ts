@@ -54,6 +54,17 @@ export interface SettingsData {
   sources: string[];
 }
 
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  stockQuantity: number;
+  imagePath: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AuthUser {
   id: string;
   name: string;

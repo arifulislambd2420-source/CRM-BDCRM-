@@ -6,7 +6,7 @@
  * files) and update this snapshot on success. `bootstrap()` fills it after
  * login or on app boot when a token exists.
  */
-import type { Customer, Pipeline, SettingsData, Store, User } from '../types';
+import type { Customer, Pipeline, Product, SettingsData, Store, User } from '../types';
 import { apiFetch, getToken } from './api';
 
 interface DB {
@@ -14,13 +14,14 @@ interface DB {
   customers: Customer[];
   stores: Store[];
   pipelines: Pipeline[];
+  products: Product[];
   settings: SettingsData;
   loaded: boolean;
 }
 
 function empty(): DB {
   return {
-    users: [], customers: [], stores: [], pipelines: [],
+    users: [], customers: [], stores: [], pipelines: [], products: [],
     settings: { sources: [] }, loaded: false,
   };
 }
@@ -42,26 +43,29 @@ export const dataStore = {
   getCustomers: () => db.customers,
   getStores: () => db.stores,
   getPipelines: () => db.pipelines,
+  getProducts: () => db.products,
   getSettings: () => db.settings,
   isLoaded: () => db.loaded,
   setUsers: (v: User[]) => { db = { ...db, users: v }; emit(); },
   setCustomers: (v: Customer[]) => { db = { ...db, customers: v }; emit(); },
   setStores: (v: Store[]) => { db = { ...db, stores: v }; emit(); },
   setPipelines: (v: Pipeline[]) => { db = { ...db, pipelines: v }; emit(); },
+  setProducts: (v: Product[]) => { db = { ...db, products: v }; emit(); },
   setSettings: (v: SettingsData) => { db = { ...db, settings: v }; emit(); },
   reset: () => { db = empty(); emit(); },
 };
 
 /** Fetch all reference data. Call after login or on app boot with a session. */
 export async function bootstrap(): Promise<void> {
-  const [users, customers, stores, pipelines, settings] = await Promise.all([
+  const [users, customers, stores, pipelines, products, settings] = await Promise.all([
     apiFetch<User[]>('/api/users'),
     apiFetch<Customer[]>('/api/customers'),
     apiFetch<Store[]>('/api/stores'),
     apiFetch<Pipeline[]>('/api/pipelines'),
+    apiFetch<Product[]>('/api/products'),
     apiFetch<SettingsData>('/api/settings'),
   ]);
-  db = { users, customers, stores, pipelines, settings, loaded: true };
+  db = { users, customers, stores, pipelines, products, settings, loaded: true };
   emit();
 }
 
@@ -91,6 +95,11 @@ export async function refreshPipelines(): Promise<void> {
 export async function refreshSettings(): Promise<void> {
   const settings = await apiFetch<SettingsData>('/api/settings');
   db = { ...db, settings };
+  emit();
+}
+export async function refreshProducts(): Promise<void> {
+  const products = await apiFetch<Product[]>('/api/products');
+  db = { ...db, products };
   emit();
 }
 

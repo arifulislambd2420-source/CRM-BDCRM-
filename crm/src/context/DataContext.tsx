@@ -8,6 +8,7 @@ function snapshot() {
     customers: dataStore.getCustomers(),
     stores: dataStore.getStores(),
     pipelines: dataStore.getPipelines(),
+    products: dataStore.getProducts(),
     settings: dataStore.getSettings(),
     loaded: dataStore.isLoaded(),
   };

@@ -60,12 +60,20 @@ async function refreshOnce(): Promise<boolean> {
 
 async function rawFetch(path: string, init: RequestInit): Promise<Response> {
   const token = getToken();
+  const isForm = init.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    // Let the browser set the multipart boundary for FormData.
+    ...(isForm ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...((init.headers as Record<string, string>) ?? {}),
   };
   return fetch(BASE + path, { ...init, headers });
+}
+
+/** Resolve an image path returned by the API (e.g. "products/abc.jpg") to a full URL. */
+export function uploadUrl(relPath: string | null | undefined): string | null {
+  if (!relPath) return null;
+  return `${BASE}/uploads/${relPath.replace(/^\/+/, '')}`;
 }
 
 export async function apiFetch<T = unknown>(
