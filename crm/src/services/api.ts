@@ -5,7 +5,8 @@
  *   then retries the original request
  * - Normalizes JSON errors and returns typed results
  */
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:4000';
+// Empty string = same-origin (production). Localhost fallback = local dev only.
+const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? (import.meta.env.DEV ? 'http://localhost:4000' : '');
 
 const ACCESS_KEY = 'prokashoni-crm-token-v1';       // access JWT
 const REFRESH_KEY = 'prokashoni-crm-refresh-v1';    // refresh JWT

@@ -1,0 +1,12 @@
+{
+  "name": "prokashoni-crm",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm install --prefix crm && npm run build --prefix crm && npm install --prefix server && npm run build --prefix server",
+    "start": "node server/dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

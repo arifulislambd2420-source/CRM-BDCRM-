@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { HttpError } from './auth.js';
 import { isEmpty, prisma } from './db.js';
 import authRouter from './routes/auth.js';
@@ -19,6 +21,11 @@ import { messengerWebhookRouter } from './routes/webhook-messenger.js';
 import { seed } from './seed.js';
 import { UPLOAD_ROOT } from './upload.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// In production the compiled server lives at server/dist/index.js.
+// The React build output is at crm/dist/ (sibling of server/).
+const FRONTEND_DIST = path.resolve(__dirname, '../../crm/dist');
+
 async function boot() {
   if ((await isEmpty()) && (process.env.SEED_ON_EMPTY ?? 'true') !== 'false') {
     console.log('[seed] empty db detected — seeding demo data…');
@@ -28,16 +35,25 @@ async function boot() {
 
   const app = express();
   app.disable('x-powered-by');
-  app.use(
-    cors({
-      origin: process.env.CORS_ORIGIN?.split(',').map((s) => s.trim()) ?? '*',
-      credentials: false,
-    }),
-  );
+  // In production, frontend and backend share the same origin — no CORS needed.
+  // In dev, the Vite dev server is on a different port so CORS is required.
+  if (process.env.NODE_ENV !== 'production') {
+    app.use(
+      cors({
+        origin: process.env.CORS_ORIGIN?.split(',').map((s) => s.trim()) ?? 'http://localhost:5173',
+        credentials: false,
+      }),
+    );
+  }
   app.use(express.json({ limit: '256kb' }));
 
   // Serve uploaded files (product images, etc.) from disk.
   app.use('/uploads', express.static(UPLOAD_ROOT, { fallthrough: true, maxAge: '1d' }));
+
+  // Serve the React frontend in production (before API routes so static assets work).
+  if (process.env.NODE_ENV === 'production') {
+    app.use(express.static(FRONTEND_DIST, { maxAge: '1h' }));
+  }
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, ts: new Date().toISOString() });
@@ -58,7 +74,14 @@ async function boot() {
   app.use('/api/webhook/whatsapp', whatsappWebhookRouter);
   app.use('/api/webhook/messenger', messengerWebhookRouter);
 
-  app.use((_req, res) => res.status(404).json({ error: 'পাওয়া যায়নি।' }));
+  // In production: serve index.html for any non-API route (client-side routing).
+  if (process.env.NODE_ENV === 'production') {
+    app.get('*', (_req, res) => {
+      res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+    });
+  } else {
+    app.use((_req, res) => res.status(404).json({ error: 'পাওয়া যায়নি।' }));
+  }
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof HttpError) {
       res.status(err.status).json({ error: err.message });
