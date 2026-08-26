@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "npm install --prefix crm && npm run build --prefix crm && npm install --prefix server && npm run build --prefix server",
+    "build": "npm install --include=dev --prefix crm && npm run build --prefix crm && npm install --include=dev --prefix server && npm run build --prefix server",
     "start": "node server/dist/index.js"
   },
   "engines": {
