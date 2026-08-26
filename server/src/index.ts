@@ -12,6 +12,9 @@ import productsRouter from './routes/products.js';
 import settingsRouter from './routes/settings.js';
 import storesRouter from './routes/stores.js';
 import usersRouter from './routes/users.js';
+import conversationsRouter from './routes/conversations.js';
+import { whatsappWebhookRouter } from './routes/webhook-whatsapp.js';
+import { messengerWebhookRouter } from './routes/webhook-messenger.js';
 import { seed } from './seed.js';
 import { UPLOAD_ROOT } from './upload.js';
 
@@ -48,6 +51,10 @@ async function boot() {
   app.use('/api/users', usersRouter);
   app.use('/api/stores', storesRouter);
   app.use('/api/settings', settingsRouter);
+  app.use('/api/conversations', conversationsRouter);
+  // Webhooks receive raw JSON from Meta — already parsed by express.json()
+  app.use('/api/webhook/whatsapp', whatsappWebhookRouter);
+  app.use('/api/webhook/messenger', messengerWebhookRouter);
 
   app.use((_req, res) => res.status(404).json({ error: 'পাওয়া যায়নি।' }));
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

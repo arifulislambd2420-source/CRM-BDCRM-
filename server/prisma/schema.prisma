@@ -105,8 +105,9 @@ model Customer {
   currentStage Stage    @relation("CurrentStage", fields: [currentStageId], references: [id])
   store        Store    @relation(fields: [storeId], references: [id])
   createdBy    User     @relation("CustomerCreator", fields: [createdById], references: [id])
-  notes        Note[]
-  orders       Order[]
+  notes         Note[]
+  orders        Order[]
+  conversations Conversation[]
 
   @@index([storeId])
   @@index([pipelineId])
@@ -243,6 +244,67 @@ model Expense {
   @@map("expenses")
 }
 
+model Conversation {
+  id                   String   @id
+  channel              String   // 'whatsapp' | 'messenger'
+  integrationAccountId String   @map("integration_account_id")
+  customerId           String?  @map("customer_id")
+  // WhatsApp: remote phone wa_id. Messenger: PSID.
+  remoteId             String   @map("remote_id")
+  // Snapshot of customer name at first contact (survives customer record changes)
+  displayName          String   @map("display_name")
+  lastMessageAt        DateTime @map("last_message_at")
+  unreadCount          Int      @default(0) @map("unread_count")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  integrationAccount IntegrationAccount @relation(fields: [integrationAccountId], references: [id])
+  customer           Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  messages           Message[]
+
+  @@unique([integrationAccountId, remoteId])
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+}
+
+model Message {
+  id             String           @id
+  conversationId String           @map("conversation_id")
+  direction      MessageDirection
+  body           String?          @db.Text
+  mediaType      String?          @map("media_type") // 'image' | 'document' | 'audio' | 'video'
+  mediaUrl       String?          @map("media_url") @db.Text
+  waMessageId    String?          @unique @map("wa_message_id") // Meta's message ID (dedup)
+  sentAt         DateTime         @map("sent_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, sentAt])
+  @@map("messages")
+}
+
+model ConversionEvent {
+  id                   String   @id
+  orderId              String   @unique @map("order_id")
+  customerId           String   @map("customer_id")
+  eventName            String   @map("event_name") // 'Purchase'
+  channel              String   // 'whatsapp' | 'messenger'
+  ctwaClid             String?  @map("ctwa_clid")
+  messengerPsid        String?  @map("messenger_psid")
+  payload              String   @db.Text // JSON sent to CAPI
+  responseStatus       Int?     @map("response_status")
+  responseBody         String?  @map("response_body") @db.Text
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@map("conversion_events")
+}
+
 // Multi-account Meta integration. Each row = one WhatsApp number or Facebook Page.
 // Conversations/ChannelIdentities reference integration_account_id so adding a
 // second account later is a data-entry task, not a code change.
@@ -266,6 +328,8 @@ model IntegrationAccount {
   appSecret        String? @map("app_secret") @db.Text
   accessToken      String? @map("access_token") @db.Text
   webhookVerifyToken String? @map("webhook_verify_token")
+
+  conversations Conversation[]
 
   @@map("integration_accounts")
 }

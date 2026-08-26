@@ -106,6 +106,40 @@ export interface Order {
   payments: OrderPayment[];
 }
 
+export type MessageDirection = 'inbound' | 'outbound';
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  direction: MessageDirection;
+  body: string | null;
+  mediaType: string | null;
+  mediaUrl: string | null;
+  waMessageId: string | null;
+  sentAt: string;
+  createdAt: string;
+}
+
+export interface ConversationCustomer {
+  id: string;
+  name: string;
+  phone: string;
+}
+
+export interface Conversation {
+  id: string;
+  channel: 'whatsapp' | 'messenger';
+  integrationAccountId: string;
+  customerId: string | null;
+  remoteId: string;
+  displayName: string;
+  lastMessageAt: string;
+  unreadCount: number;
+  createdAt: string;
+  customer: ConversationCustomer | null;
+  messages: Message[];
+}
+
 export interface AuthUser {
   id: string;
   name: string;

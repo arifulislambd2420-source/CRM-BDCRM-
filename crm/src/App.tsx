@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Customers from './pages/Customers';
 import CustomerDetail from './pages/CustomerDetail';
 import Orders from './pages/Orders';
+import Inbox from './pages/Inbox';
 import Pipeline from './pages/Pipeline';
 import Products from './pages/Products';
 import Settings from './pages/Settings';
@@ -31,6 +32,7 @@ export default function App() {
             <Route path="pipeline" element={<Pipeline />} />
             <Route path="products" element={<Products />} />
             <Route path="orders" element={<Orders />} />
+            <Route path="inbox" element={<Inbox />} />
             <Route
               path="users"
               element={

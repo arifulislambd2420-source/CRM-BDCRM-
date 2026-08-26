@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { HttpError, requireAuth, requireRole } from '../auth.js';
 import { prisma } from '../db.js';
 import { asyncHandler, makeId, p } from '../utils.js';
+import { sendCAPIEvent } from '../capi.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -226,6 +227,23 @@ router.post(
     });
 
     const updated = await prisma.order.findUnique({ where: { id: orderId }, include: INCLUDE });
+
+    // Fire CAPI Purchase event if customer has ad attribution
+    const cust = await prisma.customer.findUnique({ where: { id: updated!.customerId } });
+    if (cust && (cust.ctwaClid || cust.messengerPsid)) {
+      const channel = cust.ctwaClid ? 'whatsapp' : 'messenger';
+      sendCAPIEvent({
+        orderId: updated!.id,
+        customerId: cust.id,
+        customerPhone: cust.phone,
+        customerName: cust.name,
+        ctwaClid: cust.ctwaClid ?? null,
+        messengerPsid: cust.messengerPsid ?? null,
+        channel,
+        value: Number(updated!.totalDiscountedAmount),
+      }).catch((err) => console.error('[CAPI]', err));
+    }
+
     res.json({ order: toApi(updated!), warnings });
   }),
 );
