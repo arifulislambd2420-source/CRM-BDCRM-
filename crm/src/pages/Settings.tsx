@@ -723,7 +723,7 @@ function IntegrationsTab() {
   async function load() {
     setLoading(true);
     try {
-      const data = await apiFetch('/api/integration-accounts');
+      const data = await apiFetch('/api/integration-accounts') as IntegrationAccount[];
       setAccounts(data);
     } finally {
       setLoading(false);
@@ -764,13 +764,13 @@ function IntegrationsTab() {
         const created = await apiFetch('/api/integration-accounts', {
           method: 'POST',
           body: JSON.stringify(draft),
-        });
+        }) as IntegrationAccount;
         setAccounts((prev) => [...prev, created]);
       } else {
         const updated = await apiFetch(`/api/integration-accounts/${encodeURIComponent(editing!)}`, {
           method: 'PATCH',
           body: JSON.stringify(draft),
-        });
+        }) as IntegrationAccount;
         setAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
       }
       setEditing(null);

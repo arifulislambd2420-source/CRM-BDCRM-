@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ChevronRight, CircleDollarSign, Package, Plus, X, ShoppingCart,
+  ChevronRight, CircleDollarSign, Package, Plus, X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import {
   STATUS_COLORS, STATUS_LABELS, PAYMENT_METHODS,
-  cancelOrder, confirmOrder, createOrder, getOrder, listOrders, recordPayment,
+  cancelOrder, confirmOrder, createOrder, listOrders, recordPayment,
 } from '../services/orders';
-import type { Order, Product } from '../types';
-import { uploadUrl } from '../services/api';
+import type { Order } from '../types';
 
 function money(n: number) {
   return new Intl.NumberFormat('bn-BD', { style: 'currency', currency: 'BDT', maximumFractionDigits: 2 }).format(n);
@@ -288,14 +287,12 @@ function OrderDetail({
                 অর্ডার কনফার্ম করুন (স্টক কাটবে)
               </button>
             )}
-            {order.status !== 'cancelled' && (
-              <button
-                onClick={() => setShowPayForm(!showPayForm)}
-                className="btn-outline w-full"
-              >
-                <CircleDollarSign size={14} /> পেমেন্ট যোগ করুন
-              </button>
-            )}
+            <button
+              onClick={() => setShowPayForm(!showPayForm)}
+              className="btn-outline w-full"
+            >
+              <CircleDollarSign size={14} /> পেমেন্ট যোগ করুন
+            </button>
             {showPayForm && (
               <form onSubmit={submitPayment} className="bg-navy-50 rounded-md p-3 space-y-2">
                 <div className="grid grid-cols-2 gap-2">
