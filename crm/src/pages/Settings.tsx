@@ -24,6 +24,8 @@ import {
   Save,
   Trash2,
   X,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import {
@@ -37,9 +39,10 @@ import {
 } from '../services/pipelines';
 import { updateSources } from '../services/settings';
 import { createStore, deleteStore, updateStore } from '../services/stores';
+import { apiFetch } from '../services/api';
 import type { Stage } from '../types';
 
-type Tab = 'pipelines' | 'sources' | 'stores';
+type Tab = 'pipelines' | 'sources' | 'stores' | 'integrations';
 
 export default function Settings() {
   const [tab, setTab] = useState<Tab>('pipelines');
@@ -58,6 +61,7 @@ export default function Settings() {
             ['pipelines', 'পাইপলাইন'],
             ['sources', 'সোর্স'],
             ['stores', 'শাখা'],
+            ['integrations', 'মেসেজিং ইন্টিগ্রেশন'],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -77,6 +81,7 @@ export default function Settings() {
       {tab === 'pipelines' && <PipelinesTab />}
       {tab === 'sources' && <SourcesTab />}
       {tab === 'stores' && <StoresTab />}
+      {tab === 'integrations' && <IntegrationsTab />}
     </div>
   );
 }
@@ -601,7 +606,7 @@ function StoresTab() {
   }
 
   return (
-    <div className="card p-4 max-w-2xl">
+    <div className="card p-4 max-w-2xl" id="stores-tab">
       <h2 className="text-sm font-semibold text-navy-800 mb-1">শাখা</h2>
       <p className="text-xs text-navy-500 mb-3">
         কাস্টমার ও শাখা ম্যানেজারদের শাখা এখানে ব্যবস্থাপনা করুন।
@@ -668,6 +673,388 @@ function StoresTab() {
           <Plus size={14} /> যোগ
         </button>
       </form>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Integrations tab — WhatsApp / Messenger accounts                    */
+/* ------------------------------------------------------------------ */
+
+interface IntegrationAccount {
+  id: string;
+  accountType: 'whatsapp' | 'messenger';
+  label: string;
+  active: boolean;
+  wabaId: string;
+  phoneNumberId: string;
+  pageId: string;
+  appId: string;
+  appSecret: string;
+  accessToken: string;
+  webhookVerifyToken: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+type IADraft = Omit<IntegrationAccount, 'id' | 'createdAt' | 'updatedAt'>;
+
+const BLANK_DRAFT: IADraft = {
+  accountType: 'whatsapp',
+  label: '',
+  active: true,
+  wabaId: '',
+  phoneNumberId: '',
+  pageId: '',
+  appId: '',
+  appSecret: '',
+  accessToken: '',
+  webhookVerifyToken: '',
+};
+
+function IntegrationsTab() {
+  const [accounts, setAccounts] = useState<IntegrationAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<string | null>(null); // id or 'new'
+  const [draft, setDraft] = useState<IADraft>(BLANK_DRAFT);
+  const [saving, setSaving] = useState(false);
+  const [showToken, setShowToken] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const data = await apiFetch('/api/integration-accounts');
+      setAccounts(data);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  function startNew() {
+    setDraft({ ...BLANK_DRAFT });
+    setEditing('new');
+    setShowToken(false);
+  }
+
+  function startEdit(acc: IntegrationAccount) {
+    setDraft({
+      accountType: acc.accountType,
+      label: acc.label,
+      active: acc.active,
+      wabaId: acc.wabaId,
+      phoneNumberId: acc.phoneNumberId,
+      pageId: acc.pageId,
+      appId: acc.appId,
+      appSecret: '',  // never pre-fill secrets; user must re-enter to change
+      accessToken: '',
+      webhookVerifyToken: acc.webhookVerifyToken,
+    });
+    setEditing(acc.id);
+    setShowToken(false);
+  }
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!draft.label.trim()) return;
+    setSaving(true);
+    try {
+      if (editing === 'new') {
+        const created = await apiFetch('/api/integration-accounts', {
+          method: 'POST',
+          body: JSON.stringify(draft),
+        });
+        setAccounts((prev) => [...prev, created]);
+      } else {
+        const updated = await apiFetch(`/api/integration-accounts/${encodeURIComponent(editing!)}`, {
+          method: 'PATCH',
+          body: JSON.stringify(draft),
+        });
+        setAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+      }
+      setEditing(null);
+    } catch (err: any) {
+      alert(err?.message ?? 'সংরক্ষণ ব্যর্থ।');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(id: string, label: string) {
+    if (!confirm(`"${label}" অ্যাকাউন্ট মুছে ফেলবেন? এই অ্যাকাউন্টের কথোপকথনগুলো থাকবে কিন্তু নতুন বার্তা আসবে না।`)) return;
+    await apiFetch(`/api/integration-accounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    setAccounts((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  function field(key: keyof IADraft, value: string | boolean) {
+    setDraft((d) => ({ ...d, [key]: value }));
+  }
+
+  const isWA = draft.accountType === 'whatsapp';
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-navy-800">মেসেজিং ইন্টিগ্রেশন</h2>
+          <p className="text-xs text-navy-500 mt-0.5">
+            WhatsApp Cloud API ও Facebook Messenger অ্যাকাউন্ট পরিচালনা করুন।
+            একাধিক নম্বর বা পেজ যোগ করা যাবে।
+          </p>
+        </div>
+        {editing === null && (
+          <button className="btn-primary text-sm" onClick={startNew}>
+            <Plus size={14} /> নতুন যোগ
+          </button>
+        )}
+      </div>
+
+      {/* Account form */}
+      {editing !== null && (
+        <div className="card p-5 border-2 border-teal-200">
+          <h3 className="text-sm font-semibold text-navy-800 mb-4">
+            {editing === 'new' ? 'নতুন ইন্টিগ্রেশন' : 'সম্পাদনা করুন'}
+          </h3>
+          <form onSubmit={save} className="space-y-3">
+            {/* Type + Label row */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-navy-600 mb-1">ধরন</label>
+                <select
+                  className="input"
+                  value={draft.accountType}
+                  onChange={(e) => field('accountType', e.target.value as 'whatsapp' | 'messenger')}
+                  disabled={editing !== 'new'}
+                >
+                  <option value="whatsapp">WhatsApp Cloud API</option>
+                  <option value="messenger">Facebook Messenger</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-navy-600 mb-1">লেবেল (নিজের জন্য)</label>
+                <input
+                  className="input"
+                  value={draft.label}
+                  onChange={(e) => field('label', e.target.value)}
+                  placeholder="যেমন: মূল নম্বর"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* WhatsApp-specific fields */}
+            {isWA && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-navy-600 mb-1">WABA ID</label>
+                  <input
+                    className="input font-mono text-xs"
+                    value={draft.wabaId}
+                    onChange={(e) => field('wabaId', e.target.value)}
+                    placeholder="WhatsApp Business Account ID"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-navy-600 mb-1">Phone Number ID</label>
+                  <input
+                    className="input font-mono text-xs"
+                    value={draft.phoneNumberId}
+                    onChange={(e) => field('phoneNumberId', e.target.value)}
+                    placeholder="Phone Number ID (Meta panel থেকে)"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Messenger-specific fields */}
+            {!isWA && (
+              <div>
+                <label className="block text-xs text-navy-600 mb-1">Page ID</label>
+                <input
+                  className="input font-mono text-xs"
+                  value={draft.pageId}
+                  onChange={(e) => field('pageId', e.target.value)}
+                  placeholder="Facebook Page ID"
+                />
+              </div>
+            )}
+
+            {/* Shared credential fields */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-navy-600 mb-1">App ID</label>
+                <input
+                  className="input font-mono text-xs"
+                  value={draft.appId}
+                  onChange={(e) => field('appId', e.target.value)}
+                  placeholder="Meta App ID"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-navy-600 mb-1">
+                  Webhook Verify Token{' '}
+                  <span className="text-navy-400">(নিজে তৈরি করুন)</span>
+                </label>
+                <div className="relative">
+                  <input
+                    className="input font-mono text-xs pr-9"
+                    type={showToken ? 'text' : 'password'}
+                    value={draft.webhookVerifyToken}
+                    onChange={(e) => field('webhookVerifyToken', e.target.value)}
+                    placeholder="যেকোনো গোপন স্ট্রিং"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowToken((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-navy-400 hover:text-navy-700"
+                  >
+                    {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-navy-600 mb-1">
+                Access Token{' '}
+                <span className="text-navy-400">
+                  {editing !== 'new' ? '(খালি রাখলে বদলাবে না)' : ''}
+                </span>
+              </label>
+              <input
+                className="input font-mono text-xs"
+                type="password"
+                value={draft.accessToken}
+                onChange={(e) => field('accessToken', e.target.value)}
+                placeholder={editing !== 'new' ? '••• পুরনো টোকেন বদলাতে এখানে দিন' : 'System User Access Token'}
+                autoComplete="off"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-navy-600 mb-1">
+                App Secret{' '}
+                <span className="text-navy-400">
+                  {editing !== 'new' ? '(খালি রাখলে বদলাবে না)' : '(ঐচ্ছিক)'}
+                </span>
+              </label>
+              <input
+                className="input font-mono text-xs"
+                type="password"
+                value={draft.appSecret}
+                onChange={(e) => field('appSecret', e.target.value)}
+                placeholder={editing !== 'new' ? '••• পুরনো App Secret বদলাতে এখানে দিন' : 'App Secret'}
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                id="ia-active"
+                type="checkbox"
+                checked={draft.active}
+                onChange={(e) => field('active', e.target.checked)}
+                className="h-4 w-4 rounded border-navy-300 text-teal-600"
+              />
+              <label htmlFor="ia-active" className="text-sm text-navy-700">
+                সক্রিয় (নতুন বার্তা গ্রহণ করবে)
+              </label>
+            </div>
+
+            {/* Webhook URL hint */}
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800 space-y-1">
+              <p className="font-semibold">Meta-তে রেজিস্ট্রেশনের জন্য Webhook URL:</p>
+              <p className="font-mono break-all">
+                https://YOUR_DOMAIN/api/webhook/{draft.accountType}
+              </p>
+              <p>
+                Verify Token হিসেবে উপরের <strong>Webhook Verify Token</strong> দিন।
+                আপনার ডোমেইন নিশ্চিত করার পর পূর্ণ URL জানাবেন।
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button type="submit" className="btn-primary" disabled={saving || !draft.label.trim()}>
+                <Save size={14} /> {saving ? 'সংরক্ষণ হচ্ছে…' : 'সংরক্ষণ'}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setEditing(null)}
+                disabled={saving}
+              >
+                <X size={14} /> বাতিল
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Account list */}
+      {loading ? (
+        <div className="text-sm text-navy-400 py-4">লোড হচ্ছে…</div>
+      ) : accounts.length === 0 && editing === null ? (
+        <div className="card p-6 text-center text-sm text-navy-400">
+          কোনো ইন্টিগ্রেশন কনফিগার করা নেই।
+          <br />
+          <button className="mt-2 text-teal-600 hover:underline text-sm" onClick={startNew}>
+            প্রথমটি যোগ করুন →
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {accounts.map((acc) => (
+            <div key={acc.id} className="card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm text-navy-900">{acc.label}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      acc.accountType === 'whatsapp'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {acc.accountType === 'whatsapp' ? 'WhatsApp' : 'Messenger'}
+                    </span>
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      acc.active ? 'bg-teal-100 text-teal-800' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {acc.active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 text-xs text-navy-500 space-y-0.5 font-mono">
+                    {acc.phoneNumberId && <div>Phone Number ID: {acc.phoneNumberId}</div>}
+                    {acc.wabaId && <div>WABA ID: {acc.wabaId}</div>}
+                    {acc.pageId && <div>Page ID: {acc.pageId}</div>}
+                    {acc.webhookVerifyToken && <div>Verify Token: ••••••</div>}
+                    {acc.accessToken && <div>Access Token: ••••••</div>}
+                  </div>
+                  <div className="mt-2 text-xs text-navy-400 font-mono break-all">
+                    Webhook: /api/webhook/{acc.accountType}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    className="p-1.5 text-navy-500 hover:bg-navy-100 rounded"
+                    onClick={() => startEdit(acc)}
+                    title="সম্পাদনা"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                    onClick={() => remove(acc.id, acc.label)}
+                    title="মুছুন"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

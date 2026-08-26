@@ -13,6 +13,7 @@ import settingsRouter from './routes/settings.js';
 import storesRouter from './routes/stores.js';
 import usersRouter from './routes/users.js';
 import conversationsRouter from './routes/conversations.js';
+import integrationAccountsRouter from './routes/integration-accounts.js';
 import { whatsappWebhookRouter } from './routes/webhook-whatsapp.js';
 import { messengerWebhookRouter } from './routes/webhook-messenger.js';
 import { seed } from './seed.js';
@@ -52,6 +53,7 @@ async function boot() {
   app.use('/api/stores', storesRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/conversations', conversationsRouter);
+  app.use('/api/integration-accounts', integrationAccountsRouter);
   // Webhooks receive raw JSON from Meta — already parsed by express.json()
   app.use('/api/webhook/whatsapp', whatsappWebhookRouter);
   app.use('/api/webhook/messenger', messengerWebhookRouter);
