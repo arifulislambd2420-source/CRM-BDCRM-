@@ -65,6 +65,47 @@ export interface Product {
   updatedAt: string;
 }
 
+export type OrderStatus = 'pending' | 'confirmed' | 'cancelled';
+
+export interface OrderItem {
+  id: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitOriginalPrice: number;
+  unitDiscountedPrice: number;
+  lineTotal: number;
+}
+
+export interface OrderPayment {
+  id: string;
+  amount: number;
+  paymentDate: string;
+  paymentMethod: string;
+  note: string;
+  recordedById: string;
+  createdAt: string;
+}
+
+export interface Order {
+  id: string;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  status: OrderStatus;
+  totalOriginalAmount: number;
+  totalDiscountedAmount: number;
+  totalPaid: number;
+  totalDue: number;
+  notes: string;
+  createdById: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+  items: OrderItem[];
+  payments: OrderPayment[];
+}
+
 export interface AuthUser {
   id: string;
   name: string;

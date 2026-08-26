@@ -7,6 +7,7 @@ import authRouter from './routes/auth.js';
 import customersRouter from './routes/customers.js';
 import notesRouter from './routes/notes.js';
 import pipelinesRouter from './routes/pipelines.js';
+import ordersRouter from './routes/orders.js';
 import productsRouter from './routes/products.js';
 import settingsRouter from './routes/settings.js';
 import storesRouter from './routes/stores.js';
@@ -42,6 +43,7 @@ async function boot() {
   app.use('/api/customers', customersRouter);
   app.use('/api/customers/:customerId/notes', notesRouter);
   app.use('/api/pipelines', pipelinesRouter);
+  app.use('/api/orders', ordersRouter);
   app.use('/api/products', productsRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/stores', storesRouter);

@@ -8,6 +8,7 @@ import {
   LogOut,
   BookOpen,
   Package,
+  ShoppingCart,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { Role } from '../types';
@@ -24,6 +25,7 @@ const items: NavItem[] = [
   { to: '/customers', label: 'কাস্টমার', icon: Users, roles: ['admin', 'sub_admin', 'store_manager'] },
   { to: '/pipeline', label: 'পাইপলাইন', icon: Columns3, roles: ['admin', 'sub_admin', 'store_manager'] },
   { to: '/products', label: 'প্রোডাক্ট', icon: Package, roles: ['admin', 'sub_admin', 'store_manager'] },
+  { to: '/orders', label: 'অর্ডার', icon: ShoppingCart, roles: ['admin', 'sub_admin', 'store_manager'] },
   { to: '/users', label: 'ইউজার ম্যানেজমেন্ট', icon: UserCog, roles: ['admin'] },
   { to: '/settings', label: 'সেটিংস', icon: Settings, roles: ['admin'] },
 ];
