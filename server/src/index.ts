@@ -138,9 +138,11 @@ async function initDb() {
   console.log('[db] Running migrations…');
   try {
     const { execSync } = await import('child_process');
-    execSync('npx prisma migrate deploy', {
+    // Use local prisma binary — npx may not be in PATH on some hosts
+    const prismaBin = path.resolve(__dirname, '../node_modules/.bin/prisma');
+    execSync(`"${prismaBin}" migrate deploy`, {
       stdio: 'inherit',
-      cwd: path.resolve(__dirname, '../../server'),
+      cwd: path.resolve(__dirname, '..'),
       env: { ...process.env },
     });
     console.log('[db] Migrations complete ✓');
