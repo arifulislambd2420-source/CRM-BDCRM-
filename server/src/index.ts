@@ -175,21 +175,28 @@ async function initDb() {
   // Run migrations
   console.log('[db] Running migrations…');
   try {
-    const { execSync } = await import('child_process');
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
     // Invoke Prisma's CLI entry through the running node binary. npx is not on
     // PATH on some hosts, and node_modules/.bin/prisma is a shim that may lack
     // the exec bit after a platform deploy — process.execPath avoids both.
     const prismaCli = path.resolve(__dirname, '../node_modules/prisma/build/index.js');
-    // Hard timeout: Prisma's schema engine has been observed hanging on
-    // constrained shared hosts. Without this the whole DB init would stall and
-    // dbReady would never flip, even though HTTP is already serving.
-    execSync(`"${process.execPath}" "${prismaCli}" migrate deploy`, {
-      stdio: 'inherit',
-      cwd: path.resolve(__dirname, '..'),
-      env: { ...process.env },
-      timeout: Number(process.env.MIGRATE_TIMEOUT_MS ?? 90_000),
-      killSignal: 'SIGKILL',
-    });
+    // Async, never execSync: a synchronous spawn blocks the event loop, which
+    // would freeze the HTTP server we deliberately started first. The timeout
+    // bounds a schema engine that has been observed hanging on shared hosts.
+    const { stdout, stderr } = await execFileAsync(
+      process.execPath,
+      [prismaCli, 'migrate', 'deploy'],
+      {
+        cwd: path.resolve(__dirname, '..'),
+        env: { ...process.env },
+        timeout: Number(process.env.MIGRATE_TIMEOUT_MS ?? 90_000),
+        killSignal: 'SIGKILL',
+      },
+    );
+    if (stdout.trim()) console.log('[db][prisma]', stdout.trim());
+    if (stderr.trim()) console.warn('[db][prisma]', stderr.trim());
     console.log('[db] Migrations complete ✓');
   } catch (err) {
     // Non-fatal: the schema may already be current. Surfaced loudly because a
