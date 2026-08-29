@@ -76,7 +76,7 @@ app.use('/api/webhook/messenger', messengerWebhookRouter);
 
 // SPA catch-all in production; 404 JSON in dev
 if (process.env.NODE_ENV === 'production') {
-  app.get('*', (_req, res) => {
+  app.get('/{*path}', (_req, res) => {
     res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
   });
 } else {
