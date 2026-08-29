@@ -87,22 +87,24 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-navy-100">
-            <div className="text-xs font-medium text-navy-500 mb-2">ডেমো অ্যাকাউন্ট</div>
-            <div className="grid grid-cols-1 gap-1.5">
-              {demoAccounts.map((a) => (
-                <button
-                  key={a.email}
-                  type="button"
-                  onClick={() => fill(a)}
-                  className="text-left text-xs px-3 py-2 rounded-md bg-navy-50 hover:bg-navy-100 transition-colors"
-                >
-                  <span className="font-medium text-navy-800">{a.role}</span>
-                  <span className="text-navy-500"> · {a.email}</span>
-                </button>
-              ))}
+          {import.meta.env.DEV && (
+            <div className="mt-6 pt-5 border-t border-navy-100">
+              <div className="text-xs font-medium text-navy-500 mb-2">ডেমো অ্যাকাউন্ট</div>
+              <div className="grid grid-cols-1 gap-1.5">
+                {demoAccounts.map((a) => (
+                  <button
+                    key={a.email}
+                    type="button"
+                    onClick={() => fill(a)}
+                    className="text-left text-xs px-3 py-2 rounded-md bg-navy-50 hover:bg-navy-100 transition-colors"
+                  >
+                    <span className="font-medium text-navy-800">{a.role}</span>
+                    <span className="text-navy-500"> · {a.email}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
