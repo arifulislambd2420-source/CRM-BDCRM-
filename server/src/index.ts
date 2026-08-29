@@ -115,6 +115,39 @@ server.on('error', (err) => {
 
 // ── Database initialisation (runs AFTER server is already listening) ──────────
 
+/**
+ * chmod +x every Prisma engine binary and the CLI shim.
+ * A deploy that loses the executable bit otherwise breaks `migrate deploy`
+ * with EACCES, silently leaving new migrations unapplied.
+ */
+async function ensurePrismaEnginesExecutable() {
+  const { chmod, readdir } = await import('fs/promises');
+  const dirs = [
+    path.resolve(__dirname, '../node_modules/@prisma/engines'),
+    path.resolve(__dirname, '../node_modules/.bin'),
+  ];
+  let fixed = 0;
+  for (const dir of dirs) {
+    let entries: string[];
+    try {
+      entries = await readdir(dir);
+    } catch {
+      continue; // directory absent — nothing to fix
+    }
+    for (const name of entries) {
+      // Engine binaries and CLI shims; skip .wasm/.json/.d.ts data files.
+      if (/\.(wasm|json|d\.ts|md|map)$/.test(name)) continue;
+      try {
+        await chmod(path.join(dir, name), 0o755);
+        fixed++;
+      } catch {
+        // Non-fatal: not ours to chmod, or already correct.
+      }
+    }
+  }
+  console.log(`[db] Ensured executable bit on ${fixed} Prisma engine/bin file(s)`);
+}
+
 async function initDb() {
   // Test connectivity with a short timeout
   console.log('[db] Testing database connection…');
@@ -134,21 +167,36 @@ async function initDb() {
     return; // Do NOT exit — let health check remain reachable for diagnosis
   }
 
+  // Some hosts (Hostinger's build/deploy sync among them) copy node_modules
+  // without preserving the executable bit, which makes Prisma's schema engine
+  // fail to spawn with EACCES. Restore it before shelling out to the CLI.
+  await ensurePrismaEnginesExecutable();
+
   // Run migrations
   console.log('[db] Running migrations…');
   try {
     const { execSync } = await import('child_process');
-    // Use local prisma binary — npx may not be in PATH on some hosts
-    const prismaBin = path.resolve(__dirname, '../node_modules/.bin/prisma');
-    execSync(`"${prismaBin}" migrate deploy`, {
+    // Invoke Prisma's CLI entry through the running node binary. npx is not on
+    // PATH on some hosts, and node_modules/.bin/prisma is a shim that may lack
+    // the exec bit after a platform deploy — process.execPath avoids both.
+    const prismaCli = path.resolve(__dirname, '../node_modules/prisma/build/index.js');
+    // Hard timeout: Prisma's schema engine has been observed hanging on
+    // constrained shared hosts. Without this the whole DB init would stall and
+    // dbReady would never flip, even though HTTP is already serving.
+    execSync(`"${process.execPath}" "${prismaCli}" migrate deploy`, {
       stdio: 'inherit',
       cwd: path.resolve(__dirname, '..'),
       env: { ...process.env },
+      timeout: Number(process.env.MIGRATE_TIMEOUT_MS ?? 90_000),
+      killSignal: 'SIGKILL',
     });
     console.log('[db] Migrations complete ✓');
   } catch (err) {
-    console.error('[db] Migration failed:', err);
-    // Non-fatal — tables may already exist
+    // Non-fatal: the schema may already be current. Surfaced loudly because a
+    // silent failure here means new migrations never reach production.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[db] Migration step did not complete:', msg);
+    console.error('[db] If a migration is pending, apply it manually — see README.');
   }
 
   // Seed if empty
