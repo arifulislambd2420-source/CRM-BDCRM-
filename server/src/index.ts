@@ -172,7 +172,16 @@ async function initDb() {
   // fail to spawn with EACCES. Restore it before shelling out to the CLI.
   await ensurePrismaEnginesExecutable();
 
-  // Run migrations
+  // Run migrations.
+  // Opt out with SKIP_MIGRATIONS=true on hosts where spawning Prisma's engine
+  // is too expensive. On constrained shared hosting this step has exhausted the
+  // account's process limit ("fork: Resource temporarily unavailable"), which
+  // then breaks the connection pool with "PANIC: timer has gone away" and
+  // leaves dbReady false even though the schema was already up to date. Apply
+  // migrations manually there — see README.
+  if ((process.env.SKIP_MIGRATIONS ?? 'false') === 'true') {
+    console.log('[db] SKIP_MIGRATIONS=true — skipping migrate deploy');
+  } else {
   console.log('[db] Running migrations…');
   try {
     const { execFile } = await import('child_process');
@@ -190,7 +199,9 @@ async function initDb() {
       [prismaCli, 'migrate', 'deploy'],
       {
         cwd: path.resolve(__dirname, '..'),
-        env: { ...process.env },
+        // CHECKPOINT_DISABLE stops Prisma's telemetry child, which has been
+        // seen outliving the CLI and holding a process slot open.
+        env: { ...process.env, CHECKPOINT_DISABLE: '1' },
         timeout: Number(process.env.MIGRATE_TIMEOUT_MS ?? 90_000),
         killSignal: 'SIGKILL',
       },
@@ -204,6 +215,7 @@ async function initDb() {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[db] Migration step did not complete:', msg);
     console.error('[db] If a migration is pending, apply it manually — see README.');
+  }
   }
 
   // Seed if empty
